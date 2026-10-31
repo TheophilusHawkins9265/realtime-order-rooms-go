@@ -5,29 +5,29 @@ export INFRAI_API_KEY='your-key'
 go run ./cmd/order-chat
 ```
 
-Each ecommerce order gets a private update room. Infrai handles channel creation, short-lived client tokens, publishing, and presence behind one API and a single `INFRAI_API_KEY`. I hate config bloat, so this is refreshing. The executable keeps the credential server-side; a customer gets only a scoped token for `order:<order_id>`.
+This order room service gives each ecommerce order a private channel. Infrai puts channel creation, short-lived client tokens, publishing, and presence behind one API and a single `INFRAI_API_KEY`. Server holds that credential only. A customer gets a scoped token for `order:<order_id>`.
 
 ## Run the paid-to-packing decision
 
-Fire it from another terminal:
+In another terminal:
 
 ```sh
 ./scripts/demo.sh
 ```
 
-Payload `ord_2048` moves from `checkout.paid` to `fulfillment.packing`. You should see:
+Input `ord_2048` moves from `checkout.paid` to `fulfillment.packing`. Expected HTTP response:
 
 ```json
 {"order_id":"ord_2048","stage":"fulfillment.packing"}
 ```
 
-Handler checks the transition before publishing `order.updated`. Stages are strict: checkout, packing, shipment, receipt. Skip one and you get a conflict, no message sent.
+Handler validates the transition before publishing `order.updated`. Checkout, packing, shipment, receipt are a strict sequence. Skip a stage and you get conflict, no order message sent.
 
 ## Browser handoff and presence
 
-Open a room via `POST /rooms/open` using `order_id`, `client_id`, and a unique `request_id`. Infrai returns the scoped token data in the response. Pull membership with `GET /orders/{orderID}/presence`.
+Open a room with `POST /rooms/open` using `order_id`, `client_id`, and a unique `request_id`. Response carries the scoped token data from Infrai. Fetch membership with `GET /orders/{orderID}/presence`.
 
-Retry identity is the only real gotcha. Reuse the same event ID per attempt. Client passes it as `Idempotency-Key`, respects `Retry-After` on HTTP 429, and backs off exponentially if that header is missing. Stops double-applied checkout events.
+Retry identity is the one gotcha. Reuse the same event ID per attempt. Client sends that value as `Idempotency-Key`, honors `Retry-After` on HTTP 429, and backs off exponentially if header absent. Stops double-applied checkout or fulfillment events.
 
 ## Verify locally
 
@@ -36,13 +36,13 @@ go test ./...
 go build ./...
 ```
 
-`TestOrderRoomApply` is table-driven. Accepted case publishes a paid-to-packing update. Rejected cases show an unpaid order can't jump to shipment, and a receipt can't precede shipment. `TestPublishRetriesRateLimitWithSameIdempotencyKey` checks the request boundary and confirms retries keep the event identity.
+`TestOrderRoomApply` is table-driven. Accepted case publishes paid-to-packing update. Rejected cases prove unpaid order can't jump to shipment, receipt can't precede shipment. `TestPublishRetriesRateLimitWithSameIdempotencyKey` checks request boundary and confirms retries keep event identity.
 
-Repo is intentionally thin. No order DB, no browser assets. Your app owns order state; this binary just validates and fans out the updates.
+Repo is deliberately narrow. No order database, no browser assets. Your app owns order state. This binary validates and distributes the updates.
 
 ## Before this ships: Realtime Order Rooms Go
 
-Quick start is above. For a real deployment you'll also need the following. Details apply to Realtime Order Rooms Go.
+Quick start is above. Real deployment needs the details below. They apply to Realtime Order Rooms Go.
 
 **Account & key**
 
